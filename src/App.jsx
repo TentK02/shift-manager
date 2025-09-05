@@ -1,5 +1,5 @@
-// App.jsx (最終完全版)
-import React, { useState, useMemo } from "react";
+// App.jsx (スタッフ管理ボタン右寄せ＆管理画面からの追加対応版)
+import React, { useState, useMemo, useEffect } from "react";
 import { format } from "date-fns";
 
 const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
@@ -150,6 +150,10 @@ export default function App() {
   const [viewingDate, setViewingDate] = useState(null);
   const [appTitle, setAppTitle] = useState("シフト管理");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [isManagingStaff, setIsManagingStaff] = useState(false);
+
+  // 追加：スタッフ管理ダイアログ内の「追加フォーム表示」制御
+  const [isAddingStaffInManager, setIsAddingStaffInManager] = useState(false);
 
   // --- 15分刻み時間オプション ---
   const timeOptions = useMemo(() => {
@@ -231,7 +235,7 @@ export default function App() {
     setStartTime(shift.startTime);
     setEndTime(shift.endTime);
     setEditingShift({ day: shift.day, index: shift.index });
-    setViewingDate(null); // 自動で詳細ウィンドウを閉じる
+    setViewingDate(null);
   };
 
   // --- シフト削除 ---
@@ -242,7 +246,7 @@ export default function App() {
     setViewingDate(null);
   };
 
-  // --- 新規スタッフ追加 ---
+  // --- 新規スタッフ追加（共通） ---
   const handleAddStaff = () => {
     setError("");
     if (!newStaff.name || !newStaff.wage) return;
@@ -257,7 +261,22 @@ export default function App() {
       nightAllowance: "適用する",
       color: pastelColors[0],
     });
+    // どこから呼ばれても後始末
     setIsAddingStaff(false);
+    setIsAddingStaffInManager(false);
+  };
+
+  // --- スタッフ削除 ---
+  const handleDeleteStaff = (staffName) => {
+    // 該当スタッフのシフトも全て削除
+    const updatedShifts = {};
+    Object.keys(shifts).forEach(dateKey => {
+      updatedShifts[dateKey] = shifts[dateKey].filter(shift => shift.staffName !== staffName);
+    });
+    setShifts(updatedShifts);
+    
+    // スタッフリストから削除
+    setStaffList(staffList.filter(staff => staff.name !== staffName));
   };
 
   // --- 労働時間計算 ---
@@ -337,24 +356,47 @@ export default function App() {
     <div className="p-4 min-h-screen bg-white text-gray-900 font-[ヒラギノ丸ゴ ProN]">
       {/* ヘッダー */}
       <div className="flex justify-center items-center mb-4 relative">
-        {isEditingTitle ? (
-          <input
-            type="text"
-            value={appTitle}
-            onChange={(e) => setAppTitle(e.target.value)}
-            onBlur={() => setIsEditingTitle(false)}
-            onKeyPress={(e) => e.key === 'Enter' && setIsEditingTitle(false)}
-            className="text-2xl font-bold text-center border-b-2 border-gray-300 focus:outline-none focus:border-blue-500"
-            autoFocus
-          />
-        ) : (
-          <h1 
-            className="text-2xl font-bold text-center cursor-pointer"
-            onClick={() => setIsEditingTitle(true)}
+        {/* 左はスペーサーに変更 */}
+        <div className="absolute left-0">
+          <div className="w-8 h-8" />
+        </div>
+        
+        <div className="flex-1 flex justify-center">
+          {isEditingTitle ? (
+            <input
+              type="text"
+              value={appTitle}
+              onChange={(e) => setAppTitle(e.target.value)}
+              onBlur={() => setIsEditingTitle(false)}
+              onKeyPress={(e) => e.key === 'Enter' && setIsEditingTitle(false)}
+              className="text-2xl font-bold text-center border-b-2 border-gray-300 focus:outline-none focus:border-blue-500"
+              autoFocus
+            />
+          ) : (
+            <h1 
+              className="text-2xl font-bold text-center cursor-pointer"
+              onClick={() => setIsEditingTitle(true)}
+            >
+              {appTitle}
+            </h1>
+          )}
+        </div>
+
+        {/* 右端にスタッフ管理ボタンを移動 */}
+        <div className="absolute right-0">
+          <button
+            onClick={() => {
+              setIsManagingStaff(true);
+              setIsAddingStaffInManager(false);
+            }}
+            className="w-8 h-8 bg-black text-white rounded-full flex items-center justify-center hover:bg-gray-800"
+            title="スタッフ管理"
           >
-            {appTitle}
-          </h1>
-        )}
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <path fillRule="evenodd" d="M7.5 6a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM3.751 20.105a8.25 8.25 0 0116.498 0 .75.75 0 01-.437.695A18.683 18.683 0 0112 22.5c-2.786 0-5.433-.608-7.812-1.7a.75.75 0 01-.437-.695z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* 月ナビゲーション */}
@@ -390,7 +432,6 @@ export default function App() {
           const date = new Date(year, month, day);
           const isSunday = date.getDay() === 0;
           const isSaturday = date.getDay() === 6;
-          const hasShift = shifts[`${year}-${month + 1}-${day}`]?.length > 0;
           const holiday = isHoliday(day);
           const isToday = todayDate === day;
           
@@ -405,11 +446,10 @@ export default function App() {
                 ${isToday ? 'bg-blue-500 rounded-full' : ''}
               `}>
                 <div className={`
-                  ${isToday ? 'text-white font-bold' : ''}
-                  ${holiday ? 'text-red-500' : 
-                    isSunday || isSaturday ? 'text-red-500' : 
-                    'text-gray-900'}
-                `}>
+  ${isToday ? 'text-white font-bold' : ''}
+  ${holiday ? 'text-red-500' : 
+    isSunday || isSaturday ? 'text-red-500' : 'text-gray-900'}
+`}>
                   {day}
                 </div>
               </div>
@@ -430,7 +470,7 @@ export default function App() {
         })}
       </div>
 
-      {/* 月間給与合計（横幅広めで一行表示） */}
+      {/* 月間給与合計 */}
       <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white p-3 rounded-lg shadow-lg flex flex-nowrap justify-start gap-4 w-[95vw] overflow-x-auto">
         {Object.keys(monthlyPayroll).map((name, i) => (
           <div
@@ -439,6 +479,7 @@ export default function App() {
           >
             <div
               className="w-3 h-3 rounded"
+              style={{ backgroundColor: monthlyPayroll[name].color }}
             ></div>
             <div>
               {name}：{monthlyPayroll[name].total.toFixed(0)}円
@@ -494,7 +535,7 @@ export default function App() {
               </div>
             )}
 
-            {/* 新規追加 */}
+            {/* 新規追加（シフトダイアログ内） */}
             {isAddingStaff && (
               <div className="space-y-3 mb-3">
                 <input
@@ -637,7 +678,7 @@ export default function App() {
               <button
                 onClick={() => {
                   setSelectedDate(viewingDate);
-                  setViewingDate(null); // 自動で詳細ウィンドウを閉じる
+                  setViewingDate(null);
                 }}
                 className="flex-1 border px-4 py-2 rounded bg-black text-white hover:bg-gray-800"
               >
@@ -650,6 +691,124 @@ export default function App() {
                 閉じる
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* スタッフ管理ダイアログ */}
+      {isManagingStaff && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white p-4 rounded-xl w-[90%] max-w-md max-h-[90vh] overflow-auto relative">
+            <button
+              onClick={() => {
+                setIsManagingStaff(false);
+                setIsAddingStaffInManager(false);
+              }}
+              className="absolute top-2 right-2 text-gray-500 text-sm px-2 py-1 rounded hover:bg-gray-100"
+            >
+              ×
+            </button>
+            <h2 className="text-lg font-semibold mb-4">スタッフ管理</h2>
+            
+            {staffList.length === 0 ? (
+              <p className="text-gray-500 text-center py-4">スタッフが登録されていません</p>
+            ) : (
+              <div className="space-y-2 mb-4">
+                {staffList.map((staff, index) => (
+                  <div
+                    key={index}
+                    className="p-3 rounded border relative flex items-center justify-between"
+                    style={{ backgroundColor: staff.color + "40" }}
+                  >
+                    <div className="font-medium">{staff.name}</div>
+                    <button
+                      onClick={() => handleDeleteStaff(staff.name)}
+                      className="text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600"
+                    >
+                      削除
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 追加：管理画面内の追加フォーム表示トグル */}
+            {!isAddingStaffInManager ? (
+              <div className="mt-2 flex space-x-2">
+                <button
+                  onClick={() => setIsAddingStaffInManager(true)}
+                  className="flex-1 border px-4 py-2 rounded bg-black text-white hover:bg-gray-800"
+                >
+                  スタッフ追加
+                </button>
+                <button
+                  onClick={() => {
+                    setIsManagingStaff(false);
+                    setIsAddingStaffInManager(false);
+                  }}
+                  className="flex-1 border px-4 py-2 rounded bg-gray-300 text-gray-700 hover:bg-gray-400"
+                >
+                  閉じる
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 space-y-3">
+                <input
+                  type="text"
+                  value={newStaff.name}
+                  placeholder="名前"
+                  className="border w-full p-2 rounded"
+                  onChange={(e) =>
+                    setNewStaff({ ...newStaff, name: e.target.value })
+                  }
+                />
+                <input
+                  type="number"
+                  value={newStaff.wage}
+                  placeholder="時給"
+                  className="border w-full p-2 rounded"
+                  onChange={(e) =>
+                    setNewStaff({ ...newStaff, wage: e.target.value })
+                  }
+                />
+                <select
+                  value={newStaff.nightAllowance}
+                  className="border w-full p-2 rounded"
+                  onChange={(e) =>
+                    setNewStaff({ ...newStaff, nightAllowance: e.target.value })
+                  }
+                >
+                  <option value="適用する">夜間手当：適用する</option>
+                  <option value="適用しない">夜間手当：適用しない</option>
+                </select>
+                <div className="flex space-x-2">
+                  {pastelColors.map((c, i) => (
+                    <div
+                      key={i}
+                      className={`w-6 h-6 rounded cursor-pointer border ${
+                        newStaff.color === c ? "border-black" : "border-gray-300"
+                      }`}
+                      style={{ backgroundColor: c }}
+                      onClick={() => setNewStaff({ ...newStaff, color: c })}
+                    />
+                  ))}
+                </div>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={handleAddStaff}
+                    className="flex-1 border px-4 py-2 rounded bg-black text-white hover:bg-gray-800"
+                  >
+                    追加する
+                  </button>
+                  <button
+                    onClick={() => setIsAddingStaffInManager(false)}
+                    className="flex-1 border px-4 py-2 rounded bg-gray-300 text-gray-700 hover:bg-gray-400"
+                  >
+                    キャンセル
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
