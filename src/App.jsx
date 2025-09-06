@@ -1,181 +1,78 @@
-// App.jsx (スタッフ管理ボタン右寄せ＆管理画面からの追加対応版)
+// App.jsx（Firestore対応：保存が残る＆仲間とリアルタイム同期）
 import React, { useState, useMemo, useEffect } from "react";
-import { format } from "date-fns";
+import { db } from "./firebaseClient";
+import {
+  collection, addDoc, deleteDoc, doc,
+  onSnapshot, query, where, getDocs, serverTimestamp, writeBatch
+} from "firebase/firestore";
+
+// みんな同じ部屋（ルーム）を見るための合言葉。URLは同じならこのままでOK。
+const ROOM = "tent-dev";
 
 const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
-const pastelColors = [
-  "#FFB3BA",
-  "#FFDFBA",
-  "#FFFFBA",
-  "#BAFFC9",
-  "#BAE1FF",
-  "#E2BAFF",
-  "#FFBAE3",
-  "#BAFFD9",
-];
-
+const pastelColors = ["#FFB3BA","#FFDFBA","#FFFFBA","#BAFFC9","#BAE1FF","#E2BAFF","#FFBAE3","#BAFFD9"];
 const FREE_STAFF_LIMIT = 5;
 
-// 日本の祝日データ（2025年〜2030年）
+// 祝日は元コードから流用（省略可）
 const japaneseHolidays = {
-  // 2025年
-  "2025-1-1": "元日",
-  "2025-1-13": "成人の日",
-  "2025-2-11": "建国記念の日",
-  "2025-3-20": "春分の日",
-  "2025-4-29": "昭和の日",
-  "2025-5-3": "憲法記念日",
-  "2025-5-4": "みどりの日",
-  "2025-5-5": "こどもの日",
-  "2025-5-6": "振替休日",
-  "2025-7-21": "海の日",
-  "2025-8-11": "山の日",
-  "2025-9-15": "敬老の日",
-  "2025-9-23": "秋分の日",
-  "2025-10-13": "スポーツの日",
-  "2025-11-3": "文化の日",
-  "2025-11-23": "勤労感謝の日",
-  "2025-11-24": "振替休日",
-
-  // 2026年
-  "2026-1-1": "元日",
-  "2026-1-12": "成人の日",
-  "2026-2-11": "建国記念の日",
-  "2026-3-20": "春分の日",
-  "2026-4-29": "昭和の日",
-  "2026-5-3": "憲法記念日",
-  "2026-5-4": "みどりの日",
-  "2026-5-5": "こどもの日",
-  "2026-5-6": "振替休日",
-  "2026-7-20": "海の日",
-  "2026-8-11": "山の日",
-  "2026-9-21": "敬老の日",
-  "2026-9-22": "国民の休日",
-  "2026-9-23": "秋分の日",
-  "2026-10-12": "スポーツの日",
-  "2026-11-3": "文化の日",
-  "2026-11-23": "勤労感謝の日",
-
-  // 2027年
-  "2027-1-1": "元日",
-  "2027-1-11": "成人の日",
-  "2027-2-11": "建国記念の日",
-  "2027-3-21": "春分の日",
-  "2027-4-29": "昭和の日",
-  "2027-5-3": "憲法記念日",
-  "2027-5-4": "みどりの日",
-  "2027-5-5": "こどもの日",
-  "2027-7-19": "海の日",
-  "2027-8-11": "山の日",
-  "2027-9-20": "敬老の日",
-  "2027-9-23": "秋分の日",
-  "2027-10-11": "スポーツの日",
-  "2027-11-3": "文化の日",
-  "2027-11-23": "勤労感謝の日",
-
-  // 2028年
-  "2028-1-1": "元日",
-  "2028-1-10": "成人の日",
-  "2028-2-11": "建国記念の日",
-  "2028-3-20": "春分の日",
-  "2028-4-29": "昭和の日",
-  "2028-5-3": "憲法記念日",
-  "2028-5-4": "みどりの日",
-  "2028-5-5": "こどもの日",
-  "2028-7-17": "海の日",
-  "2028-8-11": "山の日",
-  "2028-9-18": "敬老の日",
-  "2028-9-22": "秋分の日",
-  "2028-10-9": "スポーツの日",
-  "2028-11-3": "文化の日",
-  "2028-11-23": "勤労感謝の日",
-
-  // 2029年
-  "2029-1-1": "元日",
-  "2029-1-8": "成人の日",
-  "2029-2-11": "建国記念の日",
-  "2029-2-12": "振替休日",
-  "2029-3-20": "春分の日",
-  "2029-4-29": "昭和の日",
-  "2029-4-30": "振替休日",
-  "2029-5-3": "憲法記念日",
-  "2029-5-4": "みどりの日",
-  "2029-5-5": "こどもの日",
-  "2029-7-16": "海の日",
-  "2029-8-11": "山の日",
-  "2029-9-17": "敬老の日",
-  "2029-9-23": "秋分の日",
-  "2029-9-24": "振替休日",
-  "2029-10-8": "スポーツの日",
-  "2029-11-3": "文化の日",
-  "2029-11-23": "勤労感謝の日",
-
-  // 2030年
-  "2030-1-1": "元日",
-  "2030-1-14": "成人の日",
-  "2030-2-11": "建国記念の日",
-  "2030-3-20": "春分の日",
-  "2030-4-29": "昭和の日",
-  "2030-5-3": "憲法記念日",
-  "2030-5-4": "みどりの日",
-  "2030-5-5": "こどもの日",
-  "2030-5-6": "振替休日",
-  "2030-7-15": "海の日",
-  "2030-8-11": "山の日",
-  "2030-9-16": "敬老の日",
-  "2030-9-23": "秋分の日",
-  "2030-10-14": "スポーツの日",
-  "2030-11-3": "文化の日",
-  "2030-11-4": "振替休日",
-  "2030-11-23": "勤労感謝の日"
+  "2025-1-1":"元日","2025-1-13":"成人の日","2025-2-11":"建国記念の日","2025-3-20":"春分の日",
+  "2025-4-29":"昭和の日","2025-5-3":"憲法記念日","2025-5-4":"みどりの日","2025-5-5":"こどもの日","2025-5-6":"振替休日",
+  "2025-7-21":"海の日","2025-8-11":"山の日","2025-9-15":"敬老の日","2025-9-23":"秋分の日","2025-10-13":"スポーツの日",
+  "2025-11-3":"文化の日","2025-11-23":"勤労感謝の日","2025-11-24":"振替休日",
+  "2026-1-1":"元日","2026-1-12":"成人の日","2026-2-11":"建国記念の日","2026-3-20":"春分の日","2026-4-29":"昭和の日",
+  "2026-5-3":"憲法記念日","2026-5-4":"みどりの日","2026-5-5":"こどもの日","2026-5-6":"振替休日","2026-7-20":"海の日",
+  "2026-8-11":"山の日","2026-9-21":"敬老の日","2026-9-22":"国民の休日","2026-9-23":"秋分の日","2026-10-12":"スポーツの日",
+  "2026-11-3":"文化の日","2026-11-23":"勤労感謝の日",
+  "2027-1-1":"元日","2027-1-11":"成人の日","2027-2-11":"建国記念の日","2027-3-21":"春分の日","2027-4-29":"昭和の日",
+  "2027-5-3":"憲法記念日","2027-5-4":"みどりの日","2027-5-5":"こどもの日","2027-7-19":"海の日","2027-8-11":"山の日",
+  "2027-9-20":"敬老の日","2027-9-23":"秋分の日","2027-10-11":"スポーツの日","2027-11-3":"文化の日","2027-11-23":"勤労感謝の日",
+  "2028-1-1":"元日","2028-1-10":"成人の日","2028-2-11":"建国記念の日","2028-3-20":"春分の日","2028-4-29":"昭和の日",
+  "2028-5-3":"憲法記念日","2028-5-4":"みどりの日","2028-5-5":"こどもの日","2028-7-17":"海の日","2028-8-11":"山の日",
+  "2028-9-18":"敬老の日","2028-9-22":"秋分の日","2028-10-9":"スポーツの日","2028-11-3":"文化の日","2028-11-23":"勤労感謝の日",
+  "2029-1-1":"元日","2029-1-8":"成人の日","2029-2-11":"建国記念の日","2029-2-12":"振替休日","2029-3-20":"春分の日",
+  "2029-4-29":"昭和の日","2029-4-30":"振替休日","2029-5-3":"憲法記念日","2029-5-4":"みどりの日","2029-5-5":"こどもの日",
+  "2029-7-16":"海の日","2029-8-11":"山の日","2029-9-17":"敬老の日","2029-9-23":"秋分の日","2029-9-24":"振替休日",
+  "2029-10-8":"スポーツの日","2029-11-3":"文化の日","2029-11-23":"勤労感謝の日",
+  "2030-1-1":"元日","2030-1-14":"成人の日","2030-2-11":"建国記念の日","2030-3-20":"春分の日","2030-4-29":"昭和の日",
+  "2030-5-3":"憲法記念日","2030-5-4":"みどりの日","2030-5-5":"こどもの日","2030-5-6":"振替休日","2030-7-15":"海の日",
+  "2030-8-11":"山の日","2030-9-16":"敬老の日","2030-9-23":"秋分の日","2030-10-14":"スポーツの日","2030-11-3":"文化の日",
+  "2030-11-4":"振替休日","2030-11-23":"勤労感謝の日"
 };
 
 export default function App() {
+  // 画面の状態
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [shifts, setShifts] = useState({});
-  const [staffList, setStaffList] = useState([]);
+  const [shifts, setShifts] = useState({});      // { "2025-9-6": [ {...}, ... ] }
+  const [staffList, setStaffList] = useState([]); // [{id,name,wage,nightAllowance,color}]
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedStaff, setSelectedStaff] = useState("");
   const [isAddingStaff, setIsAddingStaff] = useState(false);
-  const [newStaff, setNewStaff] = useState({
-    name: "",
-    wage: "",
-    nightAllowance: "適用する",
-    color: pastelColors[0],
-  });
+  const [newStaff, setNewStaff] = useState({ name:"", wage:"", nightAllowance:"適用する", color: pastelColors[0] });
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [error, setError] = useState("");
-  const [editingShift, setEditingShift] = useState(null);
+  const [editingShift, setEditingShift] = useState(null); // { day, index, docId }
   const [viewingDate, setViewingDate] = useState(null);
   const [appTitle, setAppTitle] = useState("シフト管理");
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isManagingStaff, setIsManagingStaff] = useState(false);
-
-  // 追加：スタッフ管理ダイアログ内の「追加フォーム表示」制御
   const [isAddingStaffInManager, setIsAddingStaffInManager] = useState(false);
 
-  // --- 15分刻み時間オプション ---
+  // 15分刻みの時間リスト
   const timeOptions = useMemo(() => {
     const arr = [];
-    for (let h = 0; h < 24; h++) {
-      for (let m = 0; m < 60; m += 15) {
-        arr.push(
-          `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`
-        );
-      }
-    }
+    for (let h = 0; h < 24; h++) for (let m = 0; m < 60; m += 15)
+      arr.push(`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);
     return arr;
   }, []);
 
-  // --- 月間日付 ---
+  // 月の情報
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
   const firstDay = new Date(year, month, 1).getDay();
   const lastDate = new Date(year, month + 1, 0).getDate();
   const daysInMonth = Array.from({ length: lastDate }, (_, i) => i + 1);
 
-  // 今日の日付
   const today = new Date();
   const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
   const todayDate = isCurrentMonth ? today.getDate() : null;
@@ -183,215 +80,192 @@ export default function App() {
   const prevMonth = () => setCurrentMonth(new Date(year, month - 1, 1));
   const nextMonth = () => setCurrentMonth(new Date(year, month + 1, 1));
 
-  // --- シフト保存 ---
-  const handleSaveShift = () => {
+  // 祝日チェック
+  const isHoliday = (day) => japaneseHolidays[`${year}-${month+1}-${day}`];
+
+  // ===== Firestore: いつも最新を受け取る（自動で同期）=====
+  useEffect(() => {
+    // スタッフ一覧
+    const unsubStaff = onSnapshot(collection(db, "rooms", ROOM, "staff"), (snap) => {
+      const list = snap.docs.map(d => {
+        const v = d.data();
+        return {
+          id: d.id,
+          name: v.name,
+          wage: v.wage,
+          nightAllowance: v.night_allowance ? "適用する" : "適用しない",
+          color: v.color
+        };
+      });
+      setStaffList(list);
+    });
+
+    // シフト一覧（全部を聞いておいて、当月だけ表示）
+    const unsubShifts = onSnapshot(collection(db, "rooms", ROOM, "shifts"), (snap) => {
+      const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const grouped = {};
+      all.forEach(row => {
+        // row.date は "YYYY-MM-DD" で保存する
+        const d = new Date(row.date);
+        if (d.getFullYear() !== year || d.getMonth() !== month) return;
+        const key = `${year}-${month+1}-${d.getDate()}`;
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push({
+          docId: row.id,
+          staffName: row.staff_name,
+          startTime: row.start_time,
+          endTime: row.end_time,
+          wage: row.wage,
+          color: row.color,
+          nightAllowance: row.night_allowance
+        });
+      });
+      setShifts(grouped);
+    });
+
+    return () => { unsubStaff(); unsubShifts(); };
+  }, [year, month]);
+
+  // ===== Firestore: 保存・削除 =====
+  const handleAddStaff = async () => {
     setError("");
-    if (!selectedDate || !selectedStaff || !startTime || !endTime) {
-      setError("全て選択してください");
-      return;
-    }
-    const staffObj = staffList.find((s) => s.name === selectedStaff);
-    if (!staffObj) return;
-    const key = `${year}-${month + 1}-${selectedDate}`;
-    const current = shifts[key] || [];
-    
-    if (editingShift !== null) {
-      // 編集モード
-      const updatedShifts = [...current];
-      updatedShifts[editingShift.index] = {
-        staffName: selectedStaff,
-        startTime,
-        endTime,
-        wage: staffObj.wage,
-        color: staffObj.color,
-        nightAllowance: staffObj.nightAllowance === "適用する",
-      };
-      setShifts({ ...shifts, [key]: updatedShifts });
-      setEditingShift(null);
-    } else {
-      // 新規追加モード
-      const newEntry = {
-        staffName: selectedStaff,
-        startTime,
-        endTime,
-        wage: staffObj.wage,
-        color: staffObj.color,
-        nightAllowance: staffObj.nightAllowance === "適用する",
-      };
-      setShifts({ ...shifts, [key]: [...current, newEntry] });
-    }
-    
-    setSelectedStaff("");
-    setStartTime("");
-    setEndTime("");
-    setSelectedDate(null);
+    if (!newStaff.name || !newStaff.wage) return;
+    if (staffList.length >= FREE_STAFF_LIMIT) { setError(`無料版は最大 ${FREE_STAFF_LIMIT} 名まで`); return; }
+    await addDoc(collection(db, "rooms", ROOM, "staff"), {
+      name: newStaff.name,
+      wage: Number(newStaff.wage),
+      night_allowance: newStaff.nightAllowance === "適用する",
+      color: newStaff.color,
+      created_at: serverTimestamp()
+    });
+    setNewStaff({ name:"", wage:"", nightAllowance:"適用する", color: pastelColors[0] });
     setIsAddingStaff(false);
+    setIsAddingStaffInManager(false);
   };
 
-  // --- シフト編集 ---
+  const handleDeleteStaff = async (staffName) => {
+    // 1) 先にこの人のシフトを全部削除
+    const q1 = query(collection(db, "rooms", ROOM, "shifts"), where("staff_name","==",staffName));
+    const s1 = await getDocs(q1);
+    const batch = writeBatch(db);
+    s1.forEach(dref => batch.delete(doc(db, "rooms", ROOM, "shifts", dref.id)));
+    await batch.commit();
+
+    // 2) スタッフ本体を削除（名前一致）
+    const q2 = query(collection(db, "rooms", ROOM, "staff"), where("name","==",staffName));
+    const s2 = await getDocs(q2);
+    const batch2 = writeBatch(db);
+    s2.forEach(dref => batch2.delete(doc(db, "rooms", ROOM, "staff", dref.id)));
+    await batch2.commit();
+  };
+
+  const handleSaveShift = async () => {
+    setError("");
+    if (!selectedDate || !selectedStaff || !startTime || !endTime) { setError("全て選択してください"); return; }
+    const staffObj = staffList.find(s=>s.name===selectedStaff);
+    if (!staffObj) return;
+
+    const isoDate = new Date(year, month, selectedDate).toISOString().slice(0,10);
+
+    // 編集なら、前の1件を消してから追加（簡単で確実）
+    if (editingShift !== null && editingShift.docId) {
+      await deleteDoc(doc(db, "rooms", ROOM, "shifts", editingShift.docId));
+      setEditingShift(null);
+    }
+
+    await addDoc(collection(db, "rooms", ROOM, "shifts"), {
+      date: isoDate,
+      staff_name: selectedStaff,
+      start_time: startTime,
+      end_time: endTime,
+      wage: staffObj.wage,
+      night_allowance: staffObj.nightAllowance === "適用する",
+      color: staffObj.color,
+      created_at: serverTimestamp()
+    });
+
+    // 入力欄リセット
+    setSelectedStaff(""); setStartTime(""); setEndTime(""); setSelectedDate(null); setIsAddingStaff(false);
+  };
+
   const handleEditShift = (shift) => {
     setSelectedDate(parseInt(shift.day));
     setSelectedStaff(shift.staffName);
     setStartTime(shift.startTime);
     setEndTime(shift.endTime);
-    setEditingShift({ day: shift.day, index: shift.index });
+    setEditingShift({ day: shift.day, index: shift.index, docId: shift.docId });
     setViewingDate(null);
   };
 
-  // --- シフト削除 ---
-  const handleDeleteShift = (day, index) => {
-    const key = `${year}-${month + 1}-${day}`;
-    const updatedShifts = shifts[key].filter((_, i) => i !== index);
-    setShifts({ ...shifts, [key]: updatedShifts });
+  const handleDeleteShift = async (day, index) => {
+    const key = `${year}-${month+1}-${day}`;
+    const target = (shifts[key] || [])[index];
+    if (!target) return;
+    await deleteDoc(doc(db, "rooms", ROOM, "shifts", target.docId));
     setViewingDate(null);
   };
 
-  // --- 新規スタッフ追加（共通） ---
-  const handleAddStaff = () => {
-    setError("");
-    if (!newStaff.name || !newStaff.wage) return;
-    if (staffList.length >= FREE_STAFF_LIMIT) {
-      setError(`無料版は最大 ${FREE_STAFF_LIMIT} 名まで`);
-      return;
-    }
-    setStaffList([...staffList, { ...newStaff, wage: Number(newStaff.wage) }]);
-    setNewStaff({
-      name: "",
-      wage: "",
-      nightAllowance: "適用する",
-      color: pastelColors[0],
-    });
-    // どこから呼ばれても後始末
-    setIsAddingStaff(false);
-    setIsAddingStaffInManager(false);
-  };
-
-  // --- スタッフ削除 ---
-  const handleDeleteStaff = (staffName) => {
-    // 該当スタッフのシフトも全て削除
-    const updatedShifts = {};
-    Object.keys(shifts).forEach(dateKey => {
-      updatedShifts[dateKey] = shifts[dateKey].filter(shift => shift.staffName !== staffName);
-    });
-    setShifts(updatedShifts);
-    
-    // スタッフリストから削除
-    setStaffList(staffList.filter(staff => staff.name !== staffName));
-  };
-
-  // --- 労働時間計算 ---
+  // 労働時間・給与
   const calcWorkHours = (start, end) => {
     const [sh, sm] = start.split(":").map(Number);
     const [eh, em] = end.split(":").map(Number);
-    let startMinutes = sh * 60 + sm;
-    let endMinutes = eh * 60 + em;
-    if (endMinutes <= startMinutes) endMinutes += 24 * 60;
-    return (endMinutes - startMinutes) / 60;
+    let s=sh*60+sm, e=eh*60+em; if (e<=s) e+=1440; return (e-s)/60;
   };
-
-  // --- 給与計算 ---
   const calcPay = (start, end, wage, nightAllowance) => {
     const [sh, sm] = start.split(":").map(Number);
     const [eh, em] = end.split(":").map(Number);
-    let startMinutes = sh * 60 + sm;
-    let endMinutes = eh * 60 + em;
-    if (endMinutes <= startMinutes) endMinutes += 24 * 60;
-    let total = 0;
-    for (let t = startMinutes; t < endMinutes; t += 15) {
-      const hour = Math.floor((t % (24 * 60)) / 60);
-      let rate = wage;
-      if (nightAllowance && (hour >= 22 || hour < 5)) rate *= 1.25;
-      total += rate * 0.25;
+    let s=sh*60+sm, e=eh*60+em; if (e<=s) e+=1440;
+    let total=0;
+    for (let t=s; t<e; t+=15){
+      const h = Math.floor((t%1440)/60);
+      let rate=wage;
+      if (nightAllowance && (h>=22||h<5)) rate*=1.25;
+      total += rate*0.25;
     }
     return total;
   };
 
   const monthlyPayroll = useMemo(() => {
     const payroll = {};
-    Object.keys(shifts).forEach((dayKey) => {
-      shifts[dayKey].forEach((s) => {
-        if (!payroll[s.staffName]) {
-          payroll[s.staffName] = { 
-            total: 0, 
-            color: s.color, 
-            hours: 0 
-          };
-        }
-        const hours = calcWorkHours(s.startTime, s.endTime);
-        payroll[s.staffName].total += calcPay(
-          s.startTime,
-          s.endTime,
-          s.wage,
-          s.nightAllowance
-        );
-        payroll[s.staffName].hours += hours;
+    Object.keys(shifts).forEach(dayKey => {
+      (shifts[dayKey]||[]).forEach(s => {
+        if (!payroll[s.staffName]) payroll[s.staffName] = { total:0, color:s.color, hours:0 };
+        const h = calcWorkHours(s.startTime, s.endTime);
+        payroll[s.staffName].total += calcPay(s.startTime, s.endTime, s.wage, s.nightAllowance);
+        payroll[s.staffName].hours += h;
       });
     });
     return payroll;
   }, [shifts]);
 
-  // 祝日チェック
-  const isHoliday = (day) => {
-    const dateKey = `${year}-${month + 1}-${day}`;
-    return japaneseHolidays[dateKey];
-  };
-
-  // --- 日付のシフト表示（氏名＋背景カラー）---
   const getShiftsForDay = (day) => {
-    const key = `${year}-${month + 1}-${day}`;
-    const entries = shifts[key] || [];
-    return entries.map((e, i) => (
-      <div
-        key={i}
-        className="text-black text-[10px] rounded px-1 py-[1px] mb-1 truncate"
-        style={{ backgroundColor: e.color }}
-        title={`${e.staffName} ${e.startTime}-${e.endTime}`}
-      >
+    const key = `${year}-${month+1}-${day}`;
+    return (shifts[key]||[]).map((e,i)=>(
+      <div key={i} className="text-black text-[10px] rounded px-1 py-[1px] mb-1 truncate"
+           style={{backgroundColor:e.color}} title={`${e.staffName} ${e.startTime}-${e.endTime}`}>
         {e.staffName}
       </div>
     ));
   };
 
+  // ===== UI（右上：スタッフ管理ボタン）=====
   return (
-    <div className="p-4 min-h-screen bg-white text-gray-900 font-[ヒラギノ丸ゴ ProN]">
+    <div className="p-4 min-h-screen bg-white text-gray-900">
       {/* ヘッダー */}
       <div className="flex justify-center items-center mb-4 relative">
-        {/* 左はスペーサーに変更 */}
-        <div className="absolute left-0">
-          <div className="w-8 h-8" />
-        </div>
-        
+        <div className="absolute left-0"><div className="w-8 h-8" /></div>
         <div className="flex-1 flex justify-center">
           {isEditingTitle ? (
-            <input
-              type="text"
-              value={appTitle}
-              onChange={(e) => setAppTitle(e.target.value)}
-              onBlur={() => setIsEditingTitle(false)}
-              onKeyPress={(e) => e.key === 'Enter' && setIsEditingTitle(false)}
-              className="text-2xl font-bold text-center border-b-2 border-gray-300 focus:outline-none focus:border-blue-500"
-              autoFocus
-            />
+            <input type="text" value={appTitle} onChange={(e)=>setAppTitle(e.target.value)}
+              onBlur={()=>setIsEditingTitle(false)} onKeyPress={(e)=>e.key==='Enter'&&setIsEditingTitle(false)}
+              className="text-2xl font-bold text-center border-b-2 border-gray-300 focus:outline-none focus:border-blue-500" autoFocus/>
           ) : (
-            <h1 
-              className="text-2xl font-bold text-center cursor-pointer"
-              onClick={() => setIsEditingTitle(true)}
-            >
-              {appTitle}
-            </h1>
+            <h1 className="text-2xl font-bold text-center cursor-pointer" onClick={()=>setIsEditingTitle(true)}>{appTitle}</h1>
           )}
         </div>
-
-        {/* 右端にスタッフ管理ボタンを移動 */}
         <div className="absolute right-0">
-          <button
-            onClick={() => {
-              setIsManagingStaff(true);
-              setIsAddingStaffInManager(false);
-            }}
-            className="w-8 h-8 bg-black text-white rounded-full flex items-center justify-center hover:bg-gray-800"
-            title="スタッフ管理"
-          >
+          <button onClick={()=>{ setIsManagingStaff(true); setIsAddingStaffInManager(false); }}
+            className="w-8 h-8 bg-black text-white rounded-full flex items-center justify-center hover:bg-gray-800" title="スタッフ管理">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
               <path fillRule="evenodd" d="M7.5 6a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM3.751 20.105a8.25 8.25 0 0116.498 0 .75.75 0 01-.437.695A18.683 18.683 0 0112 22.5c-2.786 0-5.433-.608-7.812-1.7a.75.75 0 01-.437-.695z" clipRule="evenodd" />
             </svg>
@@ -399,93 +273,51 @@ export default function App() {
         </div>
       </div>
 
-      {/* 月ナビゲーション */}
+      {/* 月ナビ */}
       <div className="flex justify-between items-center mb-4">
-        <button onClick={prevMonth} className="border px-3 py-1 rounded">
-          &lt;
-        </button>
-        <span className="font-semibold text-lg">
-          {year}年 {month + 1}月
-        </span>
-        <button onClick={nextMonth} className="border px-3 py-1 rounded">
-          &gt;
-        </button>
+        <button onClick={prevMonth} className="border px-3 py-1 rounded">&lt;</button>
+        <span className="font-semibold text-lg">{year}年 {month+1}月</span>
+        <button onClick={nextMonth} className="border px-3 py-1 rounded">&gt;</button>
       </div>
 
       {/* 曜日 */}
       <div className="grid grid-cols-7 text-center font-semibold text-gray-700 mb-2">
-        {weekdays.map((w, idx) => (
-          <div key={w} className={idx === 0 || idx === 6 ? "text-red-500" : ""}>
-            {w}
-          </div>
+        {weekdays.map((w,idx)=>(
+          <div key={w} className={idx===0||idx===6 ? "text-red-500":""}>{w}</div>
         ))}
       </div>
 
       {/* カレンダー */}
       <div className="grid grid-cols-7 gap-1">
-        {Array(firstDay)
-          .fill(null)
-          .map((_, i) => (
-            <div key={"e" + i}></div>
-          ))}
-        {daysInMonth.map((day) => {
+        {Array(firstDay).fill(null).map((_,i)=>(<div key={"e"+i}></div>))}
+        {daysInMonth.map((day)=>{
           const date = new Date(year, month, day);
-          const isSunday = date.getDay() === 0;
-          const isSaturday = date.getDay() === 6;
+          const isSunday = date.getDay()===0;
+          const isSaturday = date.getDay()===6;
           const holiday = isHoliday(day);
-          const isToday = todayDate === day;
-          
+          const isToday = todayDate===day;
           return (
-            <div
-              key={day}
-              className="text-center cursor-pointer py-2 rounded flex flex-col items-center justify-center hover:bg-gray-100 min-h-[70px]"
-              onClick={() => setViewingDate(day)}
-            >
-              {/* 日付表示（iPhone風） */}
-              <div className={`relative w-8 h-8 flex items-center justify-center mb-1
-                ${isToday ? 'bg-blue-500 rounded-full' : ''}
-              `}>
-                <div className={`
-  ${isToday ? 'text-white font-bold' : ''}
-  ${holiday ? 'text-red-500' : 
-    isSunday || isSaturday ? 'text-red-500' : 'text-gray-900'}
-`}>
+            <div key={day} className="text-center cursor-pointer py-2 rounded flex flex-col items-center justify-center hover:bg-gray-100 min-h-[70px]"
+                 onClick={()=>setViewingDate(day)}>
+              <div className={`relative w-8 h-8 flex items-center justify-center mb-1 ${isToday?'bg-blue-500 rounded-full':''}`}>
+                <div className={`${isToday?'text-white font-bold':''} ${holiday?'text-red-500':(isSunday||isSaturday?'text-red-500':'text-gray-900')}`}>
                   {day}
                 </div>
               </div>
-              
-              {/* シフト表示（氏名＋背景カラー） */}
-              <div className="w-full px-1 space-y-[2px]">
-                {getShiftsForDay(day)}
-              </div>
-
-              {/* 祝日表示 */}
-              {holiday && (
-                <div className="text-[10px] text-red-500 mt-1 leading-tight">
-                  {holiday}
-                </div>
-              )}
+              <div className="w-full px-1 space-y-[2px]">{getShiftsForDay(day)}</div>
+              {holiday && (<div className="text-[10px] text-red-500 mt-1 leading-tight">{holiday}</div>)}
             </div>
           );
         })}
       </div>
 
       {/* 月間給与合計 */}
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white p-3 rounded-lg shadow-lg flex flex-nowrap justify-start gap-4 w-[95vw] overflow-x-auto">
-        {Object.keys(monthlyPayroll).map((name, i) => (
-          <div
-            key={i}
-            className="text-sm font-semibold flex items-center space-x-1 whitespace-nowrap flex-shrink-0"
-          >
-            <div
-              className="w-3 h-3 rounded"
-              style={{ backgroundColor: monthlyPayroll[name].color }}
-            ></div>
-            <div>
-              {name}：{monthlyPayroll[name].total.toFixed(0)}円
-              <span className="text-xs text-gray-500">
-                /{monthlyPayroll[name].hours.toFixed(1)}h
-              </span>
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white p-3 rounded-lg shadow-lg flex flex-nowrap gap-4 w-[95vw] overflow-x-auto">
+        {Object.keys(monthlyPayroll).map((name,i)=>(
+          <div key={i} className="text-sm font-semibold flex items-center space-x-1 whitespace-nowrap flex-shrink-0">
+            <div className="w-3 h-3 rounded" style={{backgroundColor: monthlyPayroll[name].color}}></div>
+            <div>{name}：{monthlyPayroll[name].total.toFixed(0)}円
+              <span className="text-xs text-gray-500">/{monthlyPayroll[name].hours.toFixed(1)}h</span>
             </div>
           </div>
         ))}
@@ -495,201 +327,88 @@ export default function App() {
       {selectedDate && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white p-4 rounded-xl w-[90%] max-w-md max-h-[90vh] overflow-auto relative">
-            <button
-              onClick={() => {
-                setSelectedDate(null);
-                setIsAddingStaff(false);
-                setSelectedStaff("");
-                setEditingShift(null);
-              }}
-              className="absolute top-2 right-2 text-gray-500 text-sm px-2 py-1 rounded hover:bg-gray-100"
-            >
-              ×
-            </button>
-            <h2 className="text-lg font-semibold mb-2">
-              {year}/{month + 1}/{selectedDate} のシフト{editingShift !== null ? '編集' : '入力'}
-            </h2>
+            <button onClick={()=>{ setSelectedDate(null); setIsAddingStaff(false); setSelectedStaff(""); setEditingShift(null); }}
+              className="absolute top-2 right-2 text-gray-500 text-sm px-2 py-1 rounded hover:bg-gray-100">×</button>
+            <h2 className="text-lg font-semibold mb-2">{year}/{month+1}/{selectedDate} のシフト{editingShift!==null?'編集':'入力'}</h2>
             {error && <div className="text-red-500 text-sm mb-2">{error}</div>}
 
-            {/* スタッフ選択 */}
             {!isAddingStaff && (
               <div className="flex space-x-2 mb-3">
-                <select
-                  value={selectedStaff}
-                  onChange={(e) => setSelectedStaff(e.target.value)}
-                  className="border p-2 rounded w-full"
-                >
+                <select value={selectedStaff} onChange={(e)=>setSelectedStaff(e.target.value)} className="border p-2 rounded w-full">
                   <option value="">スタッフ選択</option>
-                  {staffList.map((s, i) => (
-                    <option key={i} value={s.name}>
-                      {s.name}
-                    </option>
-                  ))}
+                  {staffList.map((s,i)=>(<option key={i} value={s.name}>{s.name}</option>))}
                 </select>
-                <button
-                  onClick={() => setIsAddingStaff(true)}
-                  className="border px-3 rounded bg-black text-white hover:bg-gray-800"
-                >
-                  ＋
-                </button>
+                <button onClick={()=>setIsAddingStaff(true)} className="border px-3 rounded bg-black text-white hover:bg-gray-800">＋</button>
               </div>
             )}
 
-            {/* 新規追加（シフトダイアログ内） */}
             {isAddingStaff && (
               <div className="space-y-3 mb-3">
-                <input
-                  type="text"
-                  value={newStaff.name}
-                  placeholder="名前"
-                  className="border w-full p-2 rounded"
-                  onChange={(e) =>
-                    setNewStaff({ ...newStaff, name: e.target.value })
-                  }
-                />
-                <input
-                  type="number"
-                  value={newStaff.wage}
-                  placeholder="時給"
-                  className="border w-full p-2 rounded"
-                  onChange={(e) =>
-                    setNewStaff({ ...newStaff, wage: e.target.value })
-                  }
-                />
-                <select
-                  value={newStaff.nightAllowance}
-                  className="border w-full p-2 rounded"
-                  onChange={(e) =>
-                    setNewStaff({ ...newStaff, nightAllowance: e.target.value })
-                  }
-                >
+                <input type="text" value={newStaff.name} placeholder="名前" className="border w-full p-2 rounded"
+                  onChange={(e)=>setNewStaff({...newStaff, name:e.target.value})}/>
+                <input type="number" value={newStaff.wage} placeholder="時給" className="border w-full p-2 rounded"
+                  onChange={(e)=>setNewStaff({...newStaff, wage:e.target.value})}/>
+                <select value={newStaff.nightAllowance} className="border w-full p-2 rounded"
+                  onChange={(e)=>setNewStaff({...newStaff, nightAllowance:e.target.value})}>
                   <option value="適用する">夜間手当：適用する</option>
                   <option value="適用しない">夜間手当：適用しない</option>
                 </select>
-                {/* 色選択を背景プレビュー付き */}
                 <div className="flex space-x-2">
-                  {pastelColors.map((c, i) => (
-                    <div
-                      key={i}
-                      className={`w-6 h-6 rounded cursor-pointer border ${
-                        newStaff.color === c
-                          ? "border-black"
-                          : "border-gray-300"
-                      }`}
-                      style={{ backgroundColor: c }}
-                      onClick={() => setNewStaff({ ...newStaff, color: c })}
-                    ></div>
+                  {pastelColors.map((c,i)=>(
+                    <div key={i} className={`w-6 h-6 rounded cursor-pointer border ${newStaff.color===c?'border-black':'border-gray-300'}`}
+                      style={{backgroundColor:c}} onClick={()=>setNewStaff({...newStaff, color:c})}></div>
                   ))}
                 </div>
-                <button
-                  onClick={handleAddStaff}
-                  className="border px-2 py-1 rounded w-full bg-black text-white hover:bg-gray-800"
-                >
-                  スタッフ追加
-                </button>
+                <button onClick={handleAddStaff} className="border px-2 py-1 rounded w-full bg-black text-white hover:bg-gray-800">スタッフ追加</button>
               </div>
             )}
 
-            {/* 時間選択 */}
             <div className="flex space-x-2 mb-3">
-              <select
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                className="border p-2 rounded w-full"
-              >
+              <select value={startTime} onChange={(e)=>setStartTime(e.target.value)} className="border p-2 rounded w-full">
                 <option value="">開始時間</option>
-                {timeOptions.map((t, i) => (
-                  <option key={i} value={t}>
-                    {t}
-                  </option>
-                ))}
+                {timeOptions.map((t,i)=>(<option key={i} value={t}>{t}</option>))}
               </select>
-              <select
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                className="border p-2 rounded w-full"
-              >
+              <select value={endTime} onChange={(e)=>setEndTime(e.target.value)} className="border p-2 rounded w-full">
                 <option value="">終了時間</option>
-                {timeOptions.map((t, i) => (
-                  <option key={i} value={t}>
-                    {t}
-                  </option>
-                ))}
+                {timeOptions.map((t,i)=>(<option key={i} value={t}>{t}</option>))}
               </select>
             </div>
-            <button
-              onClick={handleSaveShift}
-              className="border px-2 py-1 rounded w-full mb-2 bg-black text-white hover:bg-gray-800"
-            >
-              {editingShift !== null ? '更新' : 'シフト決定'}
+            <button onClick={handleSaveShift} className="border px-2 py-1 rounded w-full mb-2 bg-black text-white hover:bg-gray-800">
+              {editingShift!==null?'更新':'シフト決定'}
             </button>
           </div>
         </div>
       )}
 
-      {/* シフト詳細表示ダイアログ */}
+      {/* シフト詳細ダイアログ */}
       {viewingDate && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white p-4 rounded-xl w-[90%] max-w-md max-h-[90vh] overflow-auto relative">
-            <button
-              onClick={() => setViewingDate(null)}
-              className="absolute top-2 right-2 text-gray-500 text-sm px-2 py-1 rounded hover:bg-gray-100"
-            >
-              ×
-            </button>
-            <h2 className="text-lg font-semibold mb-4">
-              {year}/{month + 1}/{viewingDate} のシフト
-            </h2>
-            
-            {shifts[`${year}-${month + 1}-${viewingDate}`]?.length === 0 ? (
+            <button onClick={()=>setViewingDate(null)} className="absolute top-2 right-2 text-gray-500 text-sm px-2 py-1 rounded hover:bg-gray-100">×</button>
+            <h2 className="text-lg font-semibold mb-4">{year}/{month+1}/{viewingDate} のシフト</h2>
+            {(shifts[`${year}-${month+1}-${viewingDate}`]?.length||0) === 0 ? (
               <p className="text-gray-500 text-center py-8">シフトがありません</p>
             ) : (
               <div className="space-y-3">
-                {shifts[`${year}-${month + 1}-${viewingDate}`]?.map((shift, index) => (
-                  <div
-                    key={index}
-                    className="p-3 rounded border relative"
-                    style={{ backgroundColor: shift.color + "40" }}
-                  >
+                {shifts[`${year}-${month+1}-${viewingDate}`]?.map((shift, index)=>(
+                  <div key={index} className="p-3 rounded border relative" style={{backgroundColor: shift.color+"40"}}>
                     <div className="font-medium">{shift.staffName}</div>
-                    <div className="text-sm">
-                      {shift.startTime} - {shift.endTime}
-                    </div>
+                    <div className="text-sm">{shift.startTime} - {shift.endTime}</div>
                     <div className="absolute top-2 right-2 flex space-x-1">
-                      <button
-                        onClick={() => handleEditShift({ day: viewingDate, index, ...shift })}
-                        className="text-xs bg-black text-white px-2 py-1 rounded hover:bg-gray-800"
-                      >
-                        編集
-                      </button>
-                      <button
-                        onClick={() => handleDeleteShift(viewingDate, index)}
-                        className="text-xs bg-black text-white px-2 py-1 rounded hover:bg-gray-800"
-                      >
-                        削除
-                      </button>
+                      <button onClick={()=>{ setSelectedDate(viewingDate); setSelectedStaff(shift.staffName); setStartTime(shift.startTime); setEndTime(shift.endTime); setEditingShift({ day:viewingDate, index, docId: shift.docId }); setViewingDate(null); }}
+                        className="text-xs bg-black text-white px-2 py-1 rounded hover:bg-gray-800">編集</button>
+                      <button onClick={()=>handleDeleteShift(viewingDate, index)}
+                        className="text-xs bg-black text-white px-2 py-1 rounded hover:bg-gray-800">削除</button>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-
             <div className="mt-4 flex space-x-2">
-              <button
-                onClick={() => {
-                  setSelectedDate(viewingDate);
-                  setViewingDate(null);
-                }}
-                className="flex-1 border px-4 py-2 rounded bg-black text-white hover:bg-gray-800"
-              >
-                シフト追加
-              </button>
-              <button
-                onClick={() => setViewingDate(null)}
-                className="flex-1 border px-4 py-2 rounded bg-gray-300 text-gray-700 hover:bg-gray-400"
-              >
-                閉じる
-              </button>
+              <button onClick={()=>{ setSelectedDate(viewingDate); setViewingDate(null); }}
+                className="flex-1 border px-4 py-2 rounded bg-black text-white hover:bg-gray-800">シフト追加</button>
+              <button onClick={()=>setViewingDate(null)}
+                className="flex-1 border px-4 py-2 rounded bg-gray-300 text-gray-700 hover:bg-gray-400">閉じる</button>
             </div>
           </div>
         </div>
@@ -699,113 +418,44 @@ export default function App() {
       {isManagingStaff && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white p-4 rounded-xl w-[90%] max-w-md max-h-[90vh] overflow-auto relative">
-            <button
-              onClick={() => {
-                setIsManagingStaff(false);
-                setIsAddingStaffInManager(false);
-              }}
-              className="absolute top-2 right-2 text-gray-500 text-sm px-2 py-1 rounded hover:bg-gray-100"
-            >
-              ×
-            </button>
+            <button onClick={()=>{ setIsManagingStaff(false); setIsAddingStaffInManager(false); }}
+              className="absolute top-2 right-2 text-gray-500 text-sm px-2 py-1 rounded hover:bg-gray-100">×</button>
             <h2 className="text-lg font-semibold mb-4">スタッフ管理</h2>
-            
-            {staffList.length === 0 ? (
+
+            {staffList.length===0 ? (
               <p className="text-gray-500 text-center py-4">スタッフが登録されていません</p>
             ) : (
               <div className="space-y-2 mb-4">
-                {staffList.map((staff, index) => (
-                  <div
-                    key={index}
-                    className="p-3 rounded border relative flex items-center justify-between"
-                    style={{ backgroundColor: staff.color + "40" }}
-                  >
-                    <div className="font-medium">{staff.name}</div>
-                    <button
-                      onClick={() => handleDeleteStaff(staff.name)}
-                      className="text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600"
-                    >
-                      削除
-                    </button>
+                {staffList.map((s,index)=>(
+                  <div key={index} className="p-3 rounded border relative flex items-center justify-between" style={{backgroundColor: s.color+"40"}}>
+                    <div className="font-medium">{s.name}</div>
+                    <button onClick={()=>handleDeleteStaff(s.name)} className="text-xs bg-red-500 text-white px-2 py-1 rounded hover:bg-red-600">削除</button>
                   </div>
                 ))}
               </div>
             )}
 
-            {/* 追加：管理画面内の追加フォーム表示トグル */}
             {!isAddingStaffInManager ? (
               <div className="mt-2 flex space-x-2">
-                <button
-                  onClick={() => setIsAddingStaffInManager(true)}
-                  className="flex-1 border px-4 py-2 rounded bg-black text-white hover:bg-gray-800"
-                >
-                  スタッフ追加
-                </button>
-                <button
-                  onClick={() => {
-                    setIsManagingStaff(false);
-                    setIsAddingStaffInManager(false);
-                  }}
-                  className="flex-1 border px-4 py-2 rounded bg-gray-300 text-gray-700 hover:bg-gray-400"
-                >
-                  閉じる
-                </button>
+                <button onClick={()=>setIsAddingStaffInManager(true)} className="flex-1 border px-4 py-2 rounded bg-black text-white hover:bg-gray-800">スタッフ追加</button>
+                <button onClick={()=>{ setIsManagingStaff(false); setIsAddingStaffInManager(false); }} className="flex-1 border px-4 py-2 rounded bg-gray-300 text-gray-700 hover:bg-gray-400">閉じる</button>
               </div>
             ) : (
               <div className="mt-3 space-y-3">
-                <input
-                  type="text"
-                  value={newStaff.name}
-                  placeholder="名前"
-                  className="border w-full p-2 rounded"
-                  onChange={(e) =>
-                    setNewStaff({ ...newStaff, name: e.target.value })
-                  }
-                />
-                <input
-                  type="number"
-                  value={newStaff.wage}
-                  placeholder="時給"
-                  className="border w-full p-2 rounded"
-                  onChange={(e) =>
-                    setNewStaff({ ...newStaff, wage: e.target.value })
-                  }
-                />
-                <select
-                  value={newStaff.nightAllowance}
-                  className="border w-full p-2 rounded"
-                  onChange={(e) =>
-                    setNewStaff({ ...newStaff, nightAllowance: e.target.value })
-                  }
-                >
+                <input type="text" value={newStaff.name} placeholder="名前" className="border w-full p-2 rounded" onChange={(e)=>setNewStaff({...newStaff, name:e.target.value})}/>
+                <input type="number" value={newStaff.wage} placeholder="時給" className="border w-full p-2 rounded" onChange={(e)=>setNewStaff({...newStaff, wage:e.target.value})}/>
+                <select value={newStaff.nightAllowance} className="border w-full p-2 rounded" onChange={(e)=>setNewStaff({...newStaff, nightAllowance:e.target.value})}>
                   <option value="適用する">夜間手当：適用する</option>
                   <option value="適用しない">夜間手当：適用しない</option>
                 </select>
                 <div className="flex space-x-2">
-                  {pastelColors.map((c, i) => (
-                    <div
-                      key={i}
-                      className={`w-6 h-6 rounded cursor-pointer border ${
-                        newStaff.color === c ? "border-black" : "border-gray-300"
-                      }`}
-                      style={{ backgroundColor: c }}
-                      onClick={() => setNewStaff({ ...newStaff, color: c })}
-                    />
+                  {pastelColors.map((c,i)=>(
+                    <div key={i} className={`w-6 h-6 rounded cursor-pointer border ${newStaff.color===c?'border-black':'border-gray-300'}`} style={{backgroundColor:c}} onClick={()=>setNewStaff({...newStaff, color:c})}/>
                   ))}
                 </div>
                 <div className="flex space-x-2">
-                  <button
-                    onClick={handleAddStaff}
-                    className="flex-1 border px-4 py-2 rounded bg-black text-white hover:bg-gray-800"
-                  >
-                    追加する
-                  </button>
-                  <button
-                    onClick={() => setIsAddingStaffInManager(false)}
-                    className="flex-1 border px-4 py-2 rounded bg-gray-300 text-gray-700 hover:bg-gray-400"
-                  >
-                    キャンセル
-                  </button>
+                  <button onClick={handleAddStaff} className="flex-1 border px-4 py-2 rounded bg-black text-white hover:bg-gray-800">追加する</button>
+                  <button onClick={()=>setIsAddingStaffInManager(false)} className="flex-1 border px-4 py-2 rounded bg-gray-300 text-gray-700 hover:bg-gray-400">キャンセル</button>
                 </div>
               </div>
             )}
